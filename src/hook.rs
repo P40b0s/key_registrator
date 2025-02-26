@@ -8,9 +8,9 @@ use windows_sys::Win32::{
 
 use super::keys::KEYS_MAP;
 
-///хэндл хука
+///hook handle
 static mut HOOK: HHOOK = null_mut();
-///коллбэк для обработки хука
+///handle callback
 unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT
 {
     if n_code >= 0
@@ -55,11 +55,11 @@ pub fn start()
         HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), null_mut(), 0);
         if HOOK.is_null()
         {
-            eprintln!("ошибка регистрации хука");
+            logger::error!("error register hook");
             return;
         }
         let mut msg = std::mem::zeroed();
-        //для того чтобы программа была активной
+        //for process alive
         while GetMessageA(&mut msg, null_mut(), 0, 0) > 0
         {
             TranslateMessage(&msg);
