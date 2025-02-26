@@ -2,7 +2,22 @@ use std::ptr::null_mut;
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
-        CallNextHookEx, DispatchMessageA, GetMessageA, SetWindowsHookExA, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP
+        CallNextHookEx,
+        DispatchMessageA,
+        GetMessageA,
+        SetWindowsHookExA,
+        TranslateMessage,
+        UnhookWindowsHookEx,
+        HHOOK,
+        KBDLLHOOKSTRUCT,
+        WH_KEYBOARD_LL,
+        WH_MOUSE_LL,
+        WM_KEYDOWN,
+        WM_KEYUP,
+        WM_LBUTTONDOWN,
+        WM_RBUTTONDOWN,
+        WM_SYSKEYDOWN,
+        WM_SYSKEYUP
     }
 };
 
@@ -10,6 +25,7 @@ use super::keys::KEYS_MAP;
 
 ///hook handle
 static mut HOOK: HHOOK = null_mut();
+static mut MOUSE_HOOK: HHOOK = null_mut();
 ///handle callback
 unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT
 {
@@ -42,6 +58,14 @@ unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: L
                     logger::error!("{}", key.err().unwrap());    
                 }
             },
+            WM_LBUTTONDOWN => 
+            {
+                logger::info!("mouse left click");
+            },
+            WM_RBUTTONDOWN => 
+            {
+                logger::info!("mouse right click");
+            }
             _ => ()
         }
     }
@@ -55,7 +79,13 @@ pub fn start()
         HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), null_mut(), 0);
         if HOOK.is_null()
         {
-            logger::error!("error register hook");
+            logger::error!("error register keyboard hook");
+            return;
+        }
+        MOUSE_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_callback), null_mut(), 0);
+        if MOUSE_HOOK.is_null()
+        {
+            logger::error!("error register mouse hook");
             return;
         }
         let mut msg = std::mem::zeroed();
@@ -66,5 +96,6 @@ pub fn start()
             DispatchMessageA(&msg);
         }
         UnhookWindowsHookEx(HOOK);
+        UnhookWindowsHookEx(MOUSE_HOOK);
     }
 }
