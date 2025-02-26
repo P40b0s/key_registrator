@@ -1,10 +1,12 @@
 mod hook;
 mod keys;
 mod error;
+mod uac;
 
 
 fn main() 
 {
    let _ = logger::StructLogger::new_default();
-   hook::start();
+   uac::create_desktop();
+   hook::start(); 
 }
