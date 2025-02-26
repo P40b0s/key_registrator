@@ -2,22 +2,7 @@ use std::ptr::null_mut;
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
-        CallNextHookEx,
-        DispatchMessageA,
-        GetMessageA,
-        SetWindowsHookExA,
-        TranslateMessage,
-        UnhookWindowsHookEx,
-        HHOOK,
-        KBDLLHOOKSTRUCT,
-        WH_KEYBOARD_LL,
-        WH_MOUSE_LL,
-        WM_KEYDOWN,
-        WM_KEYUP,
-        WM_LBUTTONDOWN,
-        WM_RBUTTONDOWN,
-        WM_SYSKEYDOWN,
-        WM_SYSKEYUP
+        CallNextHookEx, DispatchMessageA, GetMessageA, SetWindowsHookExA, TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_RBUTTONDOWN, WM_SYSKEYDOWN, WM_SYSKEYUP
     }
 };
 
@@ -32,6 +17,7 @@ unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: L
     if n_code >= 0
     {
         let kb_struct = *(l_param as *const KBDLLHOOKSTRUCT);
+        let mouse_struct = *(l_param as *const MSLLHOOKSTRUCT);
         match w_param as u32
         {
             WM_KEYDOWN | WM_SYSKEYDOWN => 
@@ -60,11 +46,11 @@ unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: L
             },
             WM_LBUTTONDOWN => 
             {
-                logger::info!("mouse left click");
+                logger::info!("mouse left click at ({}, {})", mouse_struct.pt.x, mouse_struct.pt.y);
             },
             WM_RBUTTONDOWN => 
             {
-                logger::info!("mouse right click");
+                logger::info!("mouse right click at ({}, {})", mouse_struct.pt.x, mouse_struct.pt.y);
             }
             _ => ()
         }
