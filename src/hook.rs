@@ -1,5 +1,4 @@
 use std::{any::Any, collections::HashSet, fmt::Debug, future::Future, pin::Pin, ptr::null_mut, sync::{atomic::AtomicBool, Arc, RwLock}};
-//use tokio::sync::RwLock;
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
@@ -32,22 +31,6 @@ type AsyncFn = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send +
 type AsyncArgFn = Arc<dyn Fn(Arc<Box<dyn Any + Send + Sync>>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 type Argument = Arc<Box<dyn Any + Send + Sync>>;
 
-trait ClonableAny : Any + Send + Sync
-{
-    fn clone_box(&self) -> Box<dyn ClonableAny + '_>;
-    fn as_any(&self) -> &dyn Any;
-}
-impl<T: Any + Send + Sync> ClonableAny for T
-{
-    fn clone_box(&self) -> Box<dyn ClonableAny + '_> 
-    {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn Any 
-    {
-        self
-    }
-}
 #[derive(Clone)]
 struct HotKeyCallback
 {
@@ -243,7 +226,7 @@ impl KeysWatcher
         let mut cb_guard  = callbacks.write().unwrap();
         let callbacks = std::mem::replace(&mut *cb_guard, Vec::<HotKeyCallback>::new());
         drop(cb_guard);
-        std::thread::spawn(move ||
+        tokio::spawn(async move
         {
             while let Ok(r) = receiver.recv()
             {
@@ -302,7 +285,7 @@ impl KeysWatcher
     {
         std::thread::spawn(move ||
         {
-            unsafe 
+            unsafe
             {
                 HOOK = null_mut();
                 MOUSE_HOOK = null_mut();
