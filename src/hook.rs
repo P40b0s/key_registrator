@@ -207,7 +207,7 @@ impl KeysWatcher
         let callback = Arc::new(move |arg: Arc<dyn Any + Send + Sync>|
         {
             let arg = arg.downcast::<Arg>().unwrap();
-            let r= Arc::try_unwrap(arg).unwrap();
+            let r = Arc::try_unwrap(arg).unwrap();
             Box::pin(f(r)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
         });
         
@@ -236,7 +236,11 @@ impl KeysWatcher
         }
         let killer = self.kill.clone();
         Self::run_winhook();
+        //not need for self callbacks
         let callbacks = self.callbacks.clone();
+        let mut cb_guard  = callbacks.write().unwrap();
+        let callbacks = std::mem::replace(&mut *cb_guard, Vec::<HotKeyCallback>::new());
+        drop(cb_guard);
         std::thread::spawn(move ||
         {
             while let Ok(r) = receiver.recv()
@@ -246,37 +250,40 @@ impl KeysWatcher
                     drop(receiver);
                     break;
                 }
-                let guard = callbacks.read().unwrap();
-               'k: for g in guard.iter()
+                
+               'c: for callback in callbacks.iter()
                 {
                     {
                         let active_keys = ACTIVE_KEYS.read().unwrap();
-                        for k in &g.keys
+                        for k in &callback.keys
                         {
                             if !active_keys.contains(k)
                             {
-                                continue 'k;
+                                continue 'c;
                             }
                         }
                     }
-                    let funcs = g.func.clone();
+                    let funcs = callback.func.clone();
                     match funcs
                     {
                         HotKeyCallbackEnum::WithoutArg(f) =>
                         {
-                            tokio::spawn(async move 
-                            {
-                                f().await;
-                            });
+                            logger::info!("before call");
+                            // tokio::spawn(async move 
+                            // {
+                            //     f().await;
+                            // });
+                            futures::executor::block_on(async {f().await});
+                            logger::info!("after call");
                         },
                         HotKeyCallbackEnum::WithArg(f, a) =>
                         {
                             logger::info!("before call with args {:?}", &a);
-                            tokio::spawn(async move 
-                            {
-                                f(a).await;
-                            });
-                            //futures::executor::block_on(async {f(Box::new(a)).await});
+                            // tokio::spawn(async move 
+                            // {
+                            //     f(a).await;
+                            // });
+                            futures::executor::block_on(async {f(a).await});
                             logger::info!("after call with args");
                             //f(arg).await;
                             //let arg = |a: Box<dyn Any + Send>| async {f(a).await};

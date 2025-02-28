@@ -23,7 +23,7 @@ mod tests
         key_watcher
         .register(&[VirtualKey::LeftCtrl, VirtualKey::LeftAlt], callback_1)
         .register(&[VirtualKey::F5, VirtualKey::MouseLeftClick], callback_2)
-        .register_with_state(&[VirtualKey::LeftCtrl, VirtualKey::RightArrow], state, callback_3)
+        .register_with_state(&[VirtualKey::LeftCtrl, VirtualKey::RightCtrl], state, callback_3)
         .watch();
         loop 
         {
