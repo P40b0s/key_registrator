@@ -1,5 +1,5 @@
-use std::{any::Any, collections::HashSet, future::Future, pin::Pin, ptr::null_mut, sync::{atomic::AtomicBool, Arc}};
-use tokio::sync::RwLock;
+use std::{any::Any, collections::HashSet, future::Future, pin::Pin, ptr::null_mut, sync::{atomic::AtomicBool, Arc, RwLock}};
+//use tokio::sync::RwLock;
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
@@ -182,7 +182,7 @@ impl KeysWatcher
             kill: Arc::new(AtomicBool::new(false))
         }
     }
-    pub async fn register<F, Fut>(&mut self, keys: &[VirtualKey], f: F) -> &mut Self
+    pub fn register<F, Fut>(&mut self, keys: &[VirtualKey], f: F) -> &mut Self
     where 
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -193,12 +193,12 @@ impl KeysWatcher
             keys: HashSet::from_iter(keys.to_owned().into_iter()),
             func: HotKeyCallbackEnum::WithoutArg(Arc::new( move || Box::pin(f())))
         };
-        let mut guard = self.callbacks.write().await;
+        let mut guard = self.callbacks.write().unwrap();
         guard.push(hk);
         drop(guard);
         self
     }
-    pub async fn register_with_state<F, Fut, Arg>(&mut self, keys: &[VirtualKey], s: Arg, f: F) -> &mut Self
+    pub fn register_with_state<F, Fut, Arg>(&mut self, keys: &[VirtualKey], s: Arg, f: F) -> &mut Self
     where 
         F: Fn(Arg) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -215,7 +215,7 @@ impl KeysWatcher
             keys: HashSet::from_iter(keys.to_owned().into_iter()),
             func: HotKeyCallbackEnum::WithArg(callback, Arc::new(Box::new(s)))
         };
-        let mut guard = self.callbacks.write().await;
+        let mut guard = self.callbacks.write().unwrap();
         guard.push(hk);
         drop(guard);
         self
@@ -234,6 +234,56 @@ impl KeysWatcher
             let _ = SENDER.set(std::sync::RwLock::new(sender));
         }
         let killer = self.kill.clone();
+        Self::run_winhook();
+        let callbacks = self.callbacks.clone();
+        std::thread::spawn(move ||
+        {
+            while let Ok(r) = receiver.recv()
+            {
+                if killer.load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    drop(receiver);
+                    break;
+                }
+                let guard = callbacks.read().unwrap();
+               'k: for g in guard.iter()
+                {
+                    {
+                        let active_keys = ACTIVE_KEYS.read().unwrap();
+                        for k in &g.keys
+                        {
+                            if !active_keys.contains(k)
+                            {
+                                continue 'k;
+                            }
+                        }
+                    }
+                    let funcs = g.func.clone();
+                    match funcs
+                    {
+                        HotKeyCallbackEnum::WithoutArg(f) =>
+                        {
+                            futures::executor::block_on(async  {f().await});
+                        },
+                        HotKeyCallbackEnum::WithArg(f, a) =>
+                        {
+                           
+                            let f = f.to_owned();
+                            futures::executor::block_on(async {f(Box::new(a)).await});
+                            logger::info!("after call with args");
+                            //f(arg).await;
+                            //let arg = |a: Box<dyn Any + Send>| async {f(a).await};
+                            //arg.await;
+                        }
+                    }
+                    logger::debug!("keys fire");
+                }
+                logger::debug!("pressed: {}", r);
+            }
+        });
+    }
+    fn run_winhook()
+    {
         std::thread::spawn(move ||
         {
             unsafe 
@@ -259,52 +309,6 @@ impl KeysWatcher
                     TranslateMessage(&msg);
                     DispatchMessageA(&msg);
                 }
-            }
-        });
-        let callbacks = self.callbacks.clone();
-        tokio::spawn(async move
-        {
-            while let Ok(r) = receiver.recv()
-            {
-                if killer.load(std::sync::atomic::Ordering::SeqCst)
-                {
-                    drop(receiver);
-                    break;
-                }
-                let guard = callbacks.read().await;
-               'k: for g in guard.iter()
-                {
-                    {
-                        let active_keys = ACTIVE_KEYS.read().unwrap();
-                        for k in &g.keys
-                        {
-                            if !active_keys.contains(k)
-                            {
-                                continue 'k;
-                            }
-                        }
-                    }
-                    let funcs = g.func.clone();
-                    match funcs
-                    {
-                        HotKeyCallbackEnum::WithoutArg(f) =>
-                        {
-                            f().await
-                        },
-                        HotKeyCallbackEnum::WithArg(f, a) =>
-                        {
-                           
-                            let f = f.to_owned();
-                            f(Box::new(a)).await;
-                            logger::info!("after call with args");
-                            //f(arg).await;
-                            //let arg = |a: Box<dyn Any + Send>| async {f(a).await};
-                            //arg.await;
-                        }
-                    }
-                    logger::debug!("keys fire");
-                }
-                logger::debug!("pressed: {}", r);
             }
         });
     }

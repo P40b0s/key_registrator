@@ -1,5 +1,6 @@
 mod hook;
 mod keys;
+mod futures;
 pub use keys::VirtualKey;
 pub use hook::KeysWatcher;
 
@@ -20,9 +21,9 @@ mod tests
         let state = Arc::new(String::from("TEST_STATE"));
         let mut key_watcher = KeysWatcher::new();
         key_watcher
-        .register(&[VirtualKey::LeftCtrl, VirtualKey::LeftAlt], callback_1).await
-        .register(&[VirtualKey::F5, VirtualKey::MouseLeftClick], callback_2).await
-        .register_with_state(&[VirtualKey::LeftCtrl, VirtualKey::RightArrow], state, callback_3).await
+        .register(&[VirtualKey::LeftCtrl, VirtualKey::LeftAlt], callback_1)
+        .register(&[VirtualKey::F5, VirtualKey::MouseLeftClick], callback_2)
+        .register_with_state(&[VirtualKey::LeftCtrl, VirtualKey::RightArrow], state, callback_3)
         .watch();
         loop 
         {
