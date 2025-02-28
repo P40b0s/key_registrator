@@ -148,14 +148,20 @@
 //         });
 //     }
 // }
-std::thread::spawn(move ||
-    {
-        ...
-        HotKeyCallbackEnum::WithArg(f: Arc<dyn Fn(Box<dyn Any + Send + Sync>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>, a: Arc<dyn Any + Send + Sync>) =>
-        {
+// std::thread::spawn(move ||
+//     {
+//         ...
+//         HotKeyCallbackEnum::WithArg(f: Arc<dyn Fn(Box<dyn Any + Send + Sync>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>, a: Arc<dyn Any + Send + Sync>) =>
+//         {
         
-            let f = f.to_owned();
-            futures::executor::block_on(async {f(Box::new(a)).await});
-            logger::info!("На предыдущем шаге дедлок... или что-то еще но до сюда не доходит...");
-        }
-    });
+//             let f = f.to_owned();
+//             futures::executor::block_on(async {f(Box::new(a)).await});
+//             logger::info!("На предыдущем шаге дедлок... или что-то еще но до сюда не доходит...");
+//         }
+//     });
+
+
+//     HotKeyCallbackEnum::WithoutArg(f: Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>) =>
+//     {
+//         futures::executor::block_on(async  {f().await});
+//     },

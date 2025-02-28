@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashSet, future::Future, pin::Pin, ptr::null_mut, sync::{atomic::AtomicBool, Arc, RwLock}};
+use std::{any::Any, collections::HashSet, fmt::Debug, future::Future, pin::Pin, ptr::null_mut, sync::{atomic::AtomicBool, Arc, RwLock}};
 //use tokio::sync::RwLock;
 use windows_sys::Win32::{
     Foundation::{LPARAM, LRESULT, WPARAM},
@@ -29,7 +29,7 @@ use crate::keys::VirtualKey;
 static SENDER: std::sync::OnceLock<std::sync::RwLock<std::sync::mpsc::Sender<Arc<VirtualKey>>>> = std::sync::OnceLock::new();
 static ACTIVE_KEYS: std::sync::LazyLock<std::sync::RwLock<HashSet<Arc<VirtualKey>>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(HashSet::new()));
 type AsyncFn = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-type AsyncArgFn = Arc<dyn Fn(Box<dyn Any + Send + Sync>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+type AsyncArgFn = Arc<dyn Fn(Arc<dyn Any + Send + Sync>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 type Argument = Arc<dyn Any + Send + Sync>;
 
 trait ClonableAny : Any + Send + Sync
@@ -202,12 +202,13 @@ impl KeysWatcher
     where 
         F: Fn(Arg) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
-        Arg: Send + Sync + 'static + Clone
+        Arg: Send + Sync + 'static + Clone + Debug
     {
-        let callback = Arc::new(move |arg: Box<dyn Any + Send + Sync>|
+        let callback = Arc::new(move |arg: Arc<dyn Any + Send + Sync>|
         {
             let arg = arg.downcast::<Arg>().unwrap();
-            Box::pin(f(*arg)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
+            let r= Arc::try_unwrap(arg).unwrap();
+            Box::pin(f(r)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
         });
         
         let hk = HotKeyCallback
@@ -263,13 +264,19 @@ impl KeysWatcher
                     {
                         HotKeyCallbackEnum::WithoutArg(f) =>
                         {
-                            futures::executor::block_on(async  {f().await});
+                            tokio::spawn(async move 
+                            {
+                                f().await;
+                            });
                         },
                         HotKeyCallbackEnum::WithArg(f, a) =>
                         {
-                           
-                            let f = f.to_owned();
-                            futures::executor::block_on(async {f(Box::new(a)).await});
+                            logger::info!("before call with args {:?}", &a);
+                            tokio::spawn(async move 
+                            {
+                                f(a).await;
+                            });
+                            //futures::executor::block_on(async {f(Box::new(a)).await});
                             logger::info!("after call with args");
                             //f(arg).await;
                             //let arg = |a: Box<dyn Any + Send>| async {f(a).await};
