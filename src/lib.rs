@@ -1,13 +1,15 @@
+#[cfg(target_os = "windows")]
 mod hook;
 mod keys;
-mod futures;
+mod mrc_test;
 pub use keys::VirtualKey;
+#[cfg(target_os = "windows")]
 pub use hook::KeysWatcher;
 
 
 
 
-
+#[cfg(target_os = "windows")]
 #[cfg(test)]
 mod tests
 {

@@ -128,13 +128,17 @@ impl<T> IsArc for Arc<T>{}
 /// use key_registrator::VirtualKey;
 /// use key_registrator:: KeysWatcher;
 /// use std::time::Duration;
+/// use std::sync::Arc;
 /// #[tokio::main]
 /// async fn main() 
 /// {
+///     //state must be wrapped into Arc
+///     let state = Arc::new(String::from("TEST_STATE"));
 ///     let mut key_watcher = KeysWatcher::new();
 ///     key_watcher
 ///         .register(&[VirtualKey::LeftCtrl, VirtualKey::LeftAlt], callback_1)
 ///         .register(&[VirtualKey::F5, VirtualKey::MouseLeftClick], callback_2)
+///         .register_with_state(&[VirtualKey::LeftCtrl, VirtualKey::RightCtrl], state, callback_3)
 ///         .watch();
 ///     //this code run in another thread, add loop for watcher still alive
 ///     loop 
@@ -150,6 +154,10 @@ impl<T> IsArc for Arc<T>{}
 /// async fn callback_2()
 /// {
 ///     println!("F5 + mouse left click");
+/// }
+/// async fn callback_3(state: Arc<String>)
+/// {
+///     println!("{}", ["left control + right control and state: ", &state].concat());
 /// }
 /// ```
 pub struct KeysWatcher
@@ -167,11 +175,11 @@ impl KeysWatcher
             kill: Arc::new(AtomicBool::new(false))
         }
     }
+
     pub fn register<F, Fut>(&mut self, keys: &[VirtualKey], f: F) -> &mut Self
     where 
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
-        //for arguments - Arg: Send + 'static
     {
         let hk = HotKeyCallback
         {
@@ -183,6 +191,7 @@ impl KeysWatcher
         drop(guard);
         self
     }
+
     pub fn register_with_state<F, Fut, Arg>(&mut self, keys: &[VirtualKey], s: Arg, f: F) -> &mut Self
     where 
         F: Fn(Arg) -> Fut + Send + Sync + 'static,
@@ -235,7 +244,6 @@ impl KeysWatcher
                     drop(receiver);
                     break;
                 }
-                
                'c: for callback in callbacks.iter()
                 {
                     {
@@ -253,29 +261,19 @@ impl KeysWatcher
                     {
                         HotKeyCallbackEnum::WithoutArg(f) =>
                         {
-                            logger::info!("before call");
                             tokio::spawn(async move 
                             {
                                 f().await;
                             });
-                            //futures::executor::block_on(async {f().await});
-                            logger::info!("after call");
                         },
                         HotKeyCallbackEnum::WithArg(f, a) =>
                         {
-                            logger::info!("before call with args {:?}", &a);
                             tokio::spawn(async move 
                             {
                                 f(a).await;
                             });
-                            //futures::executor::block_on(async {f(a).await});
-                            logger::info!("after call with args");
-                            //f(arg).await;
-                            //let arg = |a: Box<dyn Any + Send>| async {f(a).await};
-                            //arg.await;
                         }
                     }
-                    logger::debug!("keys fire");
                 }
                 logger::debug!("pressed: {}", r);
             }
