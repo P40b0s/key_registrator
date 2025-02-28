@@ -27,8 +27,9 @@ use crate::keys::VirtualKey;
 
 static SENDER: std::sync::OnceLock<std::sync::RwLock<std::sync::mpsc::Sender<Arc<VirtualKey>>>> = std::sync::OnceLock::new();
 static ACTIVE_KEYS: std::sync::LazyLock<std::sync::RwLock<HashSet<Arc<VirtualKey>>>> = std::sync::LazyLock::new(|| std::sync::RwLock::new(HashSet::new()));
+
 type AsyncFn = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
-type AsyncArgFn = Arc<dyn Fn(Arc<Box<dyn Any + Send + Sync>>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+type AsyncArgFn = Arc<dyn Fn(Argument) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 type Argument = Arc<Box<dyn Any + Send + Sync>>;
 
 #[derive(Clone)]
@@ -198,7 +199,7 @@ impl KeysWatcher
         Fut: Future<Output = ()> + Send + 'static,
         Arg: IsArc + Send + Sync + 'static + Clone + Debug
     {
-        let callback = Arc::new(move |arg: Arc<Box<dyn Any + Send + Sync>>|
+        let callback = Arc::new(move |arg: Argument|
         {
             let arg = Arc::try_unwrap(arg).unwrap();
             let arg = arg.downcast::<Arg>().unwrap();
@@ -257,21 +258,29 @@ impl KeysWatcher
                         }
                     }
                     let funcs = callback.func.clone();
+                    logger::debug!("before call0");
                     match funcs
                     {
                         HotKeyCallbackEnum::WithoutArg(f) =>
                         {
-                            tokio::spawn(async move 
+                            logger::debug!("before call1");
+                            let s1 = tokio::spawn(async move 
                             {
+                                logger::debug!("before call1_1");
                                 f().await;
                             });
+                            s1.await;
                         },
                         HotKeyCallbackEnum::WithArg(f, a) =>
                         {
-                            tokio::spawn(async move 
+                            logger::debug!("before call2");
+                            let s1 = tokio::spawn(async move 
                             {
+                                logger::debug!("before call2_2");
                                 f(a).await;
                             });
+                            let r = s1.await;
+                            logger::error!("{:?}", r);
                         }
                     }
                 }
