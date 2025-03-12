@@ -31,29 +31,17 @@ static ACTIVE_KEYS: std::sync::LazyLock<std::sync::RwLock<HashSet<Arc<VirtualKey
 type AsyncFn = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 type AsyncArgFn = Arc<dyn Fn(Argument) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 type Argument = Arc<Box<dyn Any + Send + Sync>>;
-
-#[derive(Clone)]
+//#[derive(Clone)]
 struct HotKeyCallback
 {
     keys: HashSet<VirtualKey>,
-    func:  HotKeyCallbackEnum,
+    func: HotKeyCallbackEnum,
 }
 
 enum HotKeyCallbackEnum
 {
     WithArg(AsyncArgFn, Argument),
     WithoutArg(AsyncFn)
-}
-impl Clone for HotKeyCallbackEnum
-{
-    fn clone(&self) -> Self 
-    {
-        match self
-        {
-            HotKeyCallbackEnum::WithArg(v, a) => HotKeyCallbackEnum::WithArg(Arc::clone(v), a.clone()),
-            HotKeyCallbackEnum::WithoutArg(v) => HotKeyCallbackEnum::WithoutArg(Arc::clone(v))
-        }
-    }
 }
 
 ///hook handle
@@ -121,6 +109,7 @@ unsafe extern "system" fn hook_callback(n_code: i32, w_param: WPARAM, l_param: L
 
 pub trait IsArc {}
 impl<T> IsArc for Arc<T>{}
+
 
 /// Create key watcher with given keys and async callback
 /// 
@@ -196,20 +185,21 @@ impl KeysWatcher
     pub fn register_with_state<F, Fut, Arg>(&mut self, keys: &[VirtualKey], s: Arg, f: F) -> &mut Self
     where 
         F: Fn(Arg) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ()> + Send + Sync + 'static,
         Arg: IsArc + Send + Sync + 'static + Clone + Debug
     {
         let callback = Arc::new(move |arg: Argument|
         {
-            let arg = Arc::try_unwrap(arg).unwrap();
-            let arg = arg.downcast::<Arg>().unwrap();
-            Box::pin(f(*arg)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
+            //downcast_ref take &self + clone as Arg: IsArc
+            let arg = arg.downcast_ref::<Arg>().unwrap().clone();
+            Box::pin(f(arg)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
         });
-        
+        //boxing argument
+        let arg  = Arc::new(Box::new(s) as Box<dyn Any + Send + Sync>);
         let hk = HotKeyCallback
         {
             keys: HashSet::from_iter(keys.to_owned().into_iter()),
-            func: HotKeyCallbackEnum::WithArg(callback, Arc::new(Box::new(s)))
+            func: HotKeyCallbackEnum::WithArg(callback, arg)
         };
         let mut guard = self.callbacks.write().unwrap();
         guard.push(hk);
@@ -231,15 +221,16 @@ impl KeysWatcher
         }
         let killer = self.kill.clone();
         Self::run_winhook();
-        //not need for self callbacks
         let callbacks = self.callbacks.clone();
         let mut cb_guard  = callbacks.write().unwrap();
         let callbacks = std::mem::replace(&mut *cb_guard, Vec::<HotKeyCallback>::new());
         drop(cb_guard);
         tokio::spawn(async move
         {
+            let callbacks = Arc::new(callbacks);
             while let Ok(r) = receiver.recv()
             {
+                let callbacks = Arc::clone(&callbacks);
                 if killer.load(std::sync::atomic::Ordering::SeqCst)
                 {
                     drop(receiver);
@@ -257,30 +248,26 @@ impl KeysWatcher
                             }
                         }
                     }
-                    let funcs = callback.func.clone();
-                    logger::debug!("before call0");
-                    match funcs
+                    match &callback.func
                     {
                         HotKeyCallbackEnum::WithoutArg(f) =>
                         {
-                            logger::debug!("before call1");
-                            let s1 = tokio::spawn(async move 
-                            {
-                                logger::debug!("before call1_1");
+                            let f = Arc::clone(f);
+                           // let s1 = tokio::spawn(async move 
+                            //{
                                 f().await;
-                            });
-                            s1.await;
+                            //});
+                            //let _ = s1.await;
                         },
                         HotKeyCallbackEnum::WithArg(f, a) =>
                         {
-                            logger::debug!("before call2");
-                            let s1 = tokio::spawn(async move 
-                            {
-                                logger::debug!("before call2_2");
+                            let f = Arc::clone(f);
+                            let a = Arc::clone(a);
+                            //let s1 = tokio::spawn(async move 
+                            //{
                                 f(a).await;
-                            });
-                            let r = s1.await;
-                            logger::error!("{:?}", r);
+                            //});
+                            //let _ = s1.await;
                         }
                     }
                 }

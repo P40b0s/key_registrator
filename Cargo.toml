@@ -1,11 +1,11 @@
 [package]
 name = "key_registrator"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 
 [dependencies]
 windows-sys = {version = "0.59.0", features = ["Win32_UI_WindowsAndMessaging"]}
-tokio = {version = "*", features = ["macros", "rt", "rt-multi-thread", "time", "sync"]}
+tokio = {version = "1.44.0", features = ["macros", "rt", "rt-multi-thread", "time", "sync"]}
 logger = {git = "https://github.com/P40b0s/logger.git"}
 [dev-dependencies]
-tokio-test = "*"
+tokio-test = "0.4.4"

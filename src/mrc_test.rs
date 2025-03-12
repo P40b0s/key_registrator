@@ -3,8 +3,9 @@ use std::fmt::Debug;
 
 type AsyncFn = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 //убрал arc так как почему то при даункасте получается 2 ссылки... но как теперь использовать клонирование? этот тип никак не склонировать...
-type Argument = Box<dyn Any + Send + Sync>;
-type AsyncArgFn = Arc<dyn Fn(Argument) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+type Argument = Arc<Box<dyn Any + Send + Sync + 'static>>;
+type AsyncArgFn = Arc<dyn Fn(Argument) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync + 'static>;
+type AsyncTestFn = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>;
 
 pub trait IsArc {}
 impl<T> IsArc for Arc<T>{}
@@ -16,7 +17,6 @@ pub enum VirtualKey
     Tab,
     Enter,
 }
-#[derive(Clone)]
 struct HotKeyCallback
 {
     keys: HashSet<VirtualKey>,
@@ -26,19 +26,10 @@ struct HotKeyCallback
 enum HotKeyCallbackEnum
 {
     WithArg(AsyncArgFn, Argument),
-    WithoutArg(AsyncFn)
+    WithoutArg(AsyncFn),
+    WithTestFut(AsyncTestFn)
 }
-impl Clone for HotKeyCallbackEnum
-{
-    fn clone(&self) -> Self 
-    {
-        match self
-        {
-            HotKeyCallbackEnum::WithArg(v, a) => HotKeyCallbackEnum::WithArg(Arc::clone(v), a),
-            HotKeyCallbackEnum::WithoutArg(v) => HotKeyCallbackEnum::WithoutArg(Arc::clone(v))
-        }
-    }
-}
+
 
 pub struct KeysWatcher
 {
@@ -73,22 +64,19 @@ impl KeysWatcher
     pub fn register_with_state<F, Fut, Arg>(&mut self, keys: &[VirtualKey], s: Arg, f: F) -> &mut Self
     where 
         F: Fn(Arg) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = ()> + Send + Sync + 'static,
         Arg: IsArc + Send + Sync + 'static + Clone + Debug
     {
         let callback = Arc::new(move |arg: Argument|
         {
-            //почему 2 то?
-            logger::debug!("strong counts: {}", Arc::strong_count(&arg));
-            let arg = Arc::try_unwrap(arg).unwrap();
-            let arg = arg.downcast::<Arg>().unwrap();
-            Box::pin(f(*arg)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
+            let arg = arg.downcast_ref::<Arg>().unwrap().clone();
+            Box::pin(f(arg)) as Pin<Box<(dyn Future<Output = ()> + Send + 'static)>>
         });
-        
+        let b = Arc::new(Box::new(s) as Box<dyn Any + Send + Sync>);
         let hk = HotKeyCallback
         {
             keys: HashSet::from_iter(keys.to_owned().into_iter()),
-            func: HotKeyCallbackEnum::WithArg(callback, Arc::new(Box::new(s)))
+            func: HotKeyCallbackEnum::WithArg(callback, b)
         };
         let mut guard = self.callbacks.write().unwrap();
         guard.push(hk);
@@ -103,10 +91,11 @@ impl KeysWatcher
         drop(cb_guard);
         tokio::spawn(async move
         {
-            for callback in callbacks.iter()
+            let callbacks = callbacks;
+            for callback in callbacks
             {
-                let funcs = callback.func.clone();
-                match funcs
+                //let funcs = callback.func.clone();
+                match callback.func
                 {
                     HotKeyCallbackEnum::WithoutArg(f) =>
                     {
@@ -115,7 +104,7 @@ impl KeysWatcher
                             f().await;
                         });
                         let r = s.await;
-                        logger::debug!("{:?}", r);
+                        logger::debug!("WithoutArg{:?}", r);
                     },
                     HotKeyCallbackEnum::WithArg(f, a) =>
                     {
@@ -124,7 +113,16 @@ impl KeysWatcher
                             f(a).await;
                         });
                         let r = s.await;
-                        logger::debug!("{:?}", r);
+                        logger::debug!("WithArg{:?}", r);
+                    },
+                    HotKeyCallbackEnum::WithTestFut(fut) =>
+                    {
+                        let s = tokio::spawn(async move 
+                        {
+                            let ff = fut.await;
+                        });
+                        let r = s.await;
+                        logger::debug!("WithTestFut{:?}", r);
                     }
                 }
                 logger::debug!("keys fire");
